@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Steam Roll · 今天玩什么</title><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Steam Roll 首页"><img src="/icon.svg" alt=""><span>STEAM<span class="brand-light">ROLL</span><small>让游戏库动起来</small></span></a>
+    <div class="side-heading">我的游戏库 <span class="tiny-label">LOCAL</span></div>
+    <button id="allGames" class="nav-all active"><span>▦ &nbsp; 全部游戏</span><b id="allCount">—</b></button>
+    <div class="side-heading collection-title">STEAM 分组 <button id="clearGroups" class="text-button">清除</button></div>
+    <p class="side-hint">可多选，合并加入候选池</p>
+    <div id="groups" class="group-list"><div class="skeleton-line"></div><div class="skeleton-line"></div></div>
+    <div class="sidebar-bottom"><span class="status-dot"></span> Steam 数据只读<div>你的分组与游戏记录保持原样</div><button id="stop" class="text-button">退出本地服务 ↗</button></div>
+  </aside>
+  <main>
+    <header class="topbar"><div class="breadcrumb">我的游戏库 <span>/</span> 今天玩什么</div><div class="top-actions"><label class="sr-only" for="account">Steam 账号</label><select id="account" aria-label="Steam 账号" disabled><option>读取本地账号…</option></select><button id="refresh" class="button subtle">↻ &nbsp; 刷新</button></div></header>
+    <section class="hero"><div><div class="eyebrow"><span></span> LESS CHOOSING, MORE PLAYING</div><h1>今晚，玩点什么？</h1><p>把纠结交给骰子，把时间留给游戏。</p><div class="hero-meta"><span><b id="totalStat">—</b> 款游戏</span><i></i><span><b id="installedStat">—</b> 款已安装</span><i></i><span>隐藏游戏已排除</span></div></div><div class="hero-dice" aria-hidden="true"><img src="/icon.svg" alt=""><span>YOUR NEXT ADVENTURE</span></div></section>
+    <section class="roll-panel" aria-label="抽取设置"><div class="roll-top"><div><div class="eyebrow muted">下一场冒险</div><h2>给自己一个开玩的理由</h2></div><span id="poolBadge" class="pool-badge">候选池 · — 款</span></div><div class="roll-controls"><div class="segmented" role="group" aria-label="候选范围"><button id="modeFiltered" class="active" aria-pressed="true">从筛选结果抽取</button><button id="modeManual" aria-pressed="false">从手选游戏抽取 <span id="selectedCount">0</span></button></div><label class="repeat-label"><input id="noRepeat" type="checkbox" checked> 本轮不重复</label><button id="resetRound" class="text-button">重置本轮</button><button id="roll" class="button primary" disabled><span>⚄</span> ROLL 一个游戏 <span>↗</span></button></div><div class="roll-foot"><span id="poolHint">正在读取本机游戏库…</span><span id="roundCount">本轮已抽 0 款</span></div></section>
+    <div id="notice" class="notice" hidden></div>
+    <section class="library-section"><div class="library-title"><h2>探索你的游戏库 <span id="visibleCount">—</span></h2><div class="view-actions"><button id="selectVisible" class="text-button">全选筛选结果</button><button id="clearSelected" class="text-button">清空手选</button></div></div>
+      <div class="filters"><label class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索游戏名称或 App ID" aria-label="搜索游戏"></label><label><span class="sr-only">安装状态</span><select id="installed"><option value="all">所有安装状态</option><option value="yes">已安装</option><option value="no">未安装</option></select></label><label><span class="sr-only">游玩时长</span><select id="playtime"><option value="all">所有游玩时长</option><option value="unplayed">尚未游玩</option><option value="under2">少于 2 小时</option><option value="under10">少于 10 小时</option><option value="over10">至少 10 小时</option></select></label><label><span class="sr-only">最近游玩</span><select id="recent"><option value="all">不限最近游玩</option><option value="week">最近 7 天玩过</option><option value="month">最近 30 天玩过</option><option value="old30">至少 30 天没玩</option><option value="old180">至少半年没玩</option><option value="never">无运行记录</option></select></label><button id="resetFilters" class="text-button">重置</button></div>
+      <div class="library-toolbar"><span id="filterDescription">按 Steam 分组展示</span><div class="toolbar-options"><label class="online-label" title="仅请求可见游戏的 Steam 官方封面，不发送游玩记录"><input id="onlineCovers" type="checkbox"> 联网补全封面</label><label>排序 <select id="sort"><option value="name">游戏名称</option><option value="recent">最近游玩</option><option value="timeDesc">时长最多</option><option value="timeAsc">时长最少</option></select></label></div></div>
+      <div id="library" aria-busy="true"><div class="loading"><span class="spinner"></span><h3>正在打开你的游戏库</h3><p>首次读取可能需要几秒钟。</p></div></div>
+    </section>
+    <section id="historySection" class="history-section" hidden><div class="library-title"><h2>刚刚抽到了</h2><span>仅保留本次会话</span></div><div id="history" class="history-list"></div></section>
+    <footer><span id="sourceNote">本机读取 · 无需 Steam API Key · 无外部请求</span><span id="updatedAt"></span></footer>
+  </main>
+  <dialog id="result"><button id="closeResult" class="dialog-close" aria-label="关闭抽取结果">×</button><div id="resultBody"></div><div class="dialog-actions"><button id="again" class="button primary">⚄ &nbsp; 再 ROLL 一次</button><button id="done" class="button subtle">就决定是它了</button></div><p class="dialog-note">可以到 Steam 打开这款游戏。此工具不会启动或修改游戏。</p></dialog>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+</body></html>
