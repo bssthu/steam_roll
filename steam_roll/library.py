@@ -327,9 +327,11 @@ def load_library(root, account=None):
     display_groups = []
     for group in groups.values():
         count = sum(group['id'] in game['groups'] for game in games)
-        display_groups.append({k: group[k] for k in ['id', 'name', 'dynamic']} | {'count': count})
+        if count:
+            display_groups.append({k: group[k] for k in ['id', 'name', 'dynamic']} | {'count': count})
     ungrouped = sum('ungrouped' in game['groups'] for game in games)
-    display_groups.append({'id': 'ungrouped', 'name': '未分组', 'dynamic': False, 'count': ungrouped})
+    if ungrouped:
+        display_groups.append({'id': 'ungrouped', 'name': '未分组', 'dynamic': False, 'count': ungrouped})
     payload = {'games': games, 'groups': display_groups, 'accounts': accounts, 'account': account,
                'updatedAt': int(time.time()), 'warnings': warnings,
                'nextLicenseExpiry': next_expiry,

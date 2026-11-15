@@ -118,6 +118,28 @@ class LibraryTests(Fixture):
         self.assertEqual(data['games'][1]['groups'],['ungrouped'])
         self.assertNotIn('hidden', {g['id'] for g in data['groups']})
 
+    def test_groups_without_visible_games_are_omitted(self):
+        entries=json.loads(self.cloud.read_text())
+        for cid,added,removed in [
+            ('empty',[],[]), ('removed',[1],[1]), ('hidden_only',[2,3],[]),
+            ('unlicensed_only',[6],[]), ('tools_only',[4],[]), ('mixed',[1,2,3,4,6],[]),
+        ]:
+            entries.append(['user-collections.'+cid,{'value':json.dumps({'name':cid,'added':added,'removed':removed})}])
+        self.set_cloud(entries)
+        data,_=load_library(self.root,'123')
+        self.assertEqual({g['id']:g['count'] for g in data['groups']},{'a':1,'mixed':1,'ungrouped':1})
+        self.assertEqual([g['id'] for g in data['games']],[1,5])
+
+    def test_empty_ungrouped_and_empty_library_have_no_empty_groups(self):
+        pending=[['user-collections.a',{'value':json.dumps({'name':'测试组','added':[1,5]})}]]
+        self.write(self.cloud.with_name('cloud-storage-namespace-1.modified.json'),json.dumps(pending))
+        data,_=load_library(self.root,'123')
+        self.assertEqual({g['id']:g['count'] for g in data['groups']},{'a':2})
+        self.set_licenses([])
+        data,_=load_library(self.root,'123')
+        self.assertEqual(data['games'],[])
+        self.assertEqual(data['groups'],[])
+
     def test_pending_hidden_updates_and_removals(self):
         pending=[['user-collections.hidden',{'value':json.dumps({'id':'hidden','added':[1,2],'removed':[2]})}]]
         self.write(self.cloud.with_name('cloud-storage-namespace-1.modified.json'),json.dumps(pending))
@@ -132,9 +154,12 @@ class LibraryTests(Fixture):
         with self.assertRaises(LibraryError):load_library(self.root,'123')
 
     def test_dynamic_members_do_not_pretend_to_expand_rules(self):
-        self.set_cloud([['user-collections.hidden',{'value':'{"added":[],"removed":[]}'}],['user-collections.d',{'value':'{"name":"dynamic","added":[1],"filter":{"tags":[1]}}'}]])
-        data,_=load_library(self.root,'123')
-        self.assertTrue(any('动态' in w for w in data['warnings']))
+        for members in ([1],[]):
+            with self.subTest(members=members):
+                self.set_cloud([['user-collections.hidden',{'value':'{"added":[],"removed":[]}'}],['user-collections.d',{'value':json.dumps({'name':'dynamic','added':members,'filter':{'tags':[1]}})}]])
+                data,_=load_library(self.root,'123')
+                self.assertTrue(any('动态' in w for w in data['warnings']))
+                self.assertEqual('d' in {g['id'] for g in data['groups']},bool(members))
 
     def test_partial_install_or_missing_directory_is_not_installed(self):
         (self.root/'steamapps/common/one').rmdir()

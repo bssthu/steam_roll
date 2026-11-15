@@ -16,6 +16,9 @@ await page.locator('.game-card').first().waitFor();
 await page.waitForFunction(()=>[...document.querySelectorAll('.game-grid img')].filter(img=>img.getBoundingClientRect().top<innerHeight+100).every(img=>img.complete));
 assert(data.games.length>0);
 assert.equal(await page.locator('#totalStat').textContent(),String(data.games.length));
+assert(data.groups.every(group=>group.count>0),'Empty groups must not be returned');
+assert.deepEqual(await page.locator('#groups input').evaluateAll(elements=>elements.map(el=>el.value)),data.groups.map(group=>group.id));
+assert((await page.locator('#groups b').allTextContents()).every(count=>Number(count)>0),'Empty groups must not appear in the sidebar');
 await page.screenshot({path:'artifacts/desktop.png',fullPage:false});
 
 await page.selectOption('#installed','yes');
