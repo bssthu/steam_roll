@@ -10,11 +10,12 @@ import os
 import secrets
 import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from steam_roll.library import LibraryError, discover, image_mime, load_library, stable_read
+from steam_roll.library import LibraryError, account_list, discover, image_mime, load_library, stable_read
 from steam_roll.readonly import install
 
 PROJECT = Path(__file__).resolve().parent
@@ -41,11 +42,44 @@ class Server(ThreadingHTTPServer):
         with self.lock:
             if refresh:
                 self.cache.clear()
+            if account in self.cache:
+                result, stamp = self.cache[account]
+                data = result[0]
+                expired = data.get('nextLicenseExpiry') and time.time() >= data['nextLicenseExpiry']
+                if expired or stamp != self.source_stamp(data['account']):
+                    self.cache.clear()
             if account not in self.cache:
-                result = load_library(self.root, account)
-                self.cache[account] = result
-                self.cache[result[0]['account']] = result
-            return self.cache[account]
+                accounts = account_list(self.root)
+                target = account or accounts[0]['id']
+                if target not in {item['id'] for item in accounts}:
+                    raise LibraryError('无效的本地账号')
+                for _ in range(3):
+                    before = self.source_stamp(target)
+                    result = load_library(self.root, target)
+                    if before == self.source_stamp(target):
+                        break
+                else:
+                    raise LibraryError('Steam 正在更新游戏库，请稍后刷新。')
+                self.cache[account] = (result, before)
+                self.cache[target] = (result, before)
+            return self.cache[account][0]
+
+    def source_stamp(self, account):
+        user = self.root / 'userdata' / account
+        paths = [self.root / name for name in ['config/loginusers.vdf', 'appcache/appinfo.vdf', 'appcache/packageinfo.vdf']]
+        paths += [user / name for name in [
+            'config/licensecache', 'config/localconfig.vdf', 'config/sharedconfig.vdf',
+            '7/remote/sharedconfig.vdf', 'config/cloudstorage/cloud-storage-namespace-1.json',
+            'config/cloudstorage/cloud-storage-namespace-1.modified.json',
+        ]]
+        stamp = []
+        for path in paths:
+            try:
+                stat = path.stat()
+                stamp.append((stat.st_size, stat.st_mtime_ns))
+            except FileNotFoundError:
+                stamp.append(None)
+        return tuple(stamp)
 
 
 class Handler(BaseHTTPRequestHandler):

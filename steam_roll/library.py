@@ -1,10 +1,12 @@
 import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
 from .formats import FormatError, appinfo, at, text_vdf
+from .licenses import decode_licenses, licensed_apps, packageinfo
 
 
 class LibraryError(ValueError):
@@ -231,34 +233,80 @@ def online_cover(aid, common):
     return f'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{aid}/library_600x900.jpg'
 
 
+def visible_on_this_client(metadata, installed, platform=None):
+    """Apply appinfo's visibility flags, without guessing from names or genre.
+
+    Platform support alone does not hide an owned game: Steam must explicitly
+    mark the app as visible only on available platforms (e.g. split Mac ports).
+    """
+    common, extended = at(metadata, 'common'), at(metadata, 'extended')
+    enabled = lambda value: integer(value) > 0 or str(value).lower() == 'true'
+    if enabled(extended.get('visibleonlywheninstalled')) and not installed:
+        return False
+    if enabled(common.get('visibleonlyonavailableplatforms')):
+        current = platform or ('windows' if sys.platform == 'win32' else 'macos' if sys.platform == 'darwin' else 'linux')
+        oslist = common.get('oslist') or extended.get('validoslist')
+        if isinstance(oslist, str) and oslist.strip():
+            available = {item.strip().lower() for item in oslist.split(',')}
+            if current not in available:
+                return False
+    return True
+
+
 def load_library(root, account=None):
     accounts = account_list(root)
     account = account or accounts[0]['id']
     if account not in {a['id'] for a in accounts}:
         raise LibraryError('无效的本地账号')
     user = root / 'userdata' / account
-    hidden, groups, candidates, warnings = collections(user)
+    hidden, groups, _, warnings = collections(user)
     local = at(read_vdf(user / 'config/localconfig.vdf'), 'userlocalconfigstore', 'software', 'valve', 'steam', 'apps')
     for key, value in local.items():
         if key.isdecimal():
-            candidates.add(int(key))
             if isinstance(value, dict) and integer(value.get('hidden')):
                 hidden.add(int(key))
+    try:
+        licenses = decode_licenses(stable_read(user / 'config/licensecache'), account)
+        packages = packageinfo(stable_read(root / 'appcache/packageinfo.vdf'), {item.package_id for item in licenses})
+        now = int(time.time())
+        candidates, missing_packages, next_expiry = licensed_apps(licenses, packages, now)
+        account_apps, _, _ = licensed_apps(licenses, packages, now, include_default_package=False)
+    except (OSError, FormatError) as exc:
+        raise LibraryError('无法核实当前游戏许可证，请打开 Steam 完成同步后刷新；不会使用历史游玩记录替代当前游戏库。') from exc
+    if missing_packages:
+        warnings.append(f'{len(missing_packages)} 个有效许可缺少本地包信息，相关游戏暂未纳入，请在 Steam 完成同步后刷新。')
     installed, notices = installed_games(root)
     warnings.extend(notices)
-    # Other accounts' installed games must not leak into this account's library.
-    steamid = str(int(account) + 76561197960265728)
-    candidates.update(aid for aid, item in installed.items() if item['owner'] == steamid)
+    # Package 0 is a common download entitlement, not an account's library.
+    # Its otherwise unowned games become visible only when installed locally.
+    # A separate valid account license continues to admit an uninstalled game.
+    candidates.intersection_update(account_apps | {aid for aid, item in installed.items() if item['installed']})
+    # Only the current account's valid licenses admit games. History, collection
+    # references and remaining installation files cannot revive a removed license.
     candidates.difference_update(hidden)
-    metadata = appinfo(stable_read(root / 'appcache/appinfo.vdf'), candidates)
+    app_data = stable_read(root / 'appcache/appinfo.vdf')
+    metadata = appinfo(app_data, candidates)
+    demo_parents = {
+        aid: integer(at(item, 'common').get('parent') or at(item, 'extended').get('demoofappid'))
+        for aid, item in metadata.items() if str(at(item, 'common').get('type', '')).lower() == 'demo'
+    }
+    parent_ids = set(demo_parents.values()) - {0} - hidden - metadata.keys()
+    if parent_ids:
+        metadata.update(appinfo(app_data, parent_ids))
     games, covers = [], {}
     missing = 0
     for aid in sorted(candidates):
         common = at(metadata.get(aid, {}), 'common')
+        is_installed = installed.get(aid, {}).get('installed', False)
+        if not visible_on_this_client(metadata.get(aid, {}), is_installed):
+            continue
         kind = str(common.get('type', '')).lower()
         if kind not in ('game', 'demo'):
             if not kind:
                 missing += 1
+            continue
+        parent_type = str(at(metadata.get(demo_parents.get(aid), {}), 'common').get('type', '')).lower()
+        if kind == 'demo' and parent_type and parent_type != 'game':
             continue
         info = local.get(str(aid), {})
         localized = at(common, 'name_localized')
@@ -270,7 +318,7 @@ def load_library(root, account=None):
         minutes = integer(info.get('playtime'))
         games.append({'id': aid, 'name': name, 'originalName': common.get('name', name),
                       'minutes': minutes, 'lastPlayed': integer(info.get('lastplayed')),
-                      'installed': installed.get(aid, {}).get('installed', False),
+                      'installed': is_installed,
                       'groups': membership or ['ungrouped'], 'type': kind,
                       'onlineCover': online_cover(aid, common),
                       'cover': f'/api/cover/{aid}?account={account}' if cover else None})
@@ -284,5 +332,6 @@ def load_library(root, account=None):
     display_groups.append({'id': 'ungrouped', 'name': '未分组', 'dynamic': False, 'count': ungrouped})
     payload = {'games': games, 'groups': display_groups, 'accounts': accounts, 'account': account,
                'updatedAt': int(time.time()), 'warnings': warnings,
-               'sourceNote': '读取本机缓存中的游戏、分组与游玩记录；未同步到本机的游戏可能缺失。隐藏游戏已排除。'}
+               'nextLicenseExpiry': next_expiry,
+               'sourceNote': '按本机有效许可证读取游戏库；已排除隐藏、过期及已移除条目。Steam 状态变化后请刷新。'}
     return payload, covers
